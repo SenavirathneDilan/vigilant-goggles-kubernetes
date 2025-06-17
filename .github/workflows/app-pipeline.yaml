@@ -1,0 +1,51 @@
+name: postgres chart deployment
+on:
+    push: 
+        branches: 
+            - "development"
+            - "main"
+        paths:
+          - "helm-charts/postgres/Chart.yml"
+env:
+    WORK_DIR: '/helm-charts'
+    REGION: 'ap-southeast-1'
+jobs:
+    validate:
+        runs-on: ubuntu-latest
+
+        steps:
+          - name: checkout code
+            uses: actions/checkout@v3
+          - name: Get info
+            id: get_info
+            working-directory: ${{env.WORK_DIR}}
+            run: |
+              CHART_VERSION=$(sed -rn 's/version: //p' Chart.yaml)
+              echo "chart_version=$CHART_VERSION" >> $GITHUB_OUTPUT
+          - name: install HELM
+            run: |
+              curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+              chmod 700 get_helm.sh
+              ./get_helm.sh
+          - name: lint helm chart
+            id: helm_lint
+            working-directory: ${{env.WORK_DIR}}
+            run: |
+              helm lint
+
+          - name: Update Chart Version
+            id: update_version
+            working-directory: ${{env.WORK_DIR}}
+            if: steps.get_info.outcome == 'success'
+            env:
+               FULL_VERSION: ${{steps.get_info.outputs.chart_version}}-{{github.sha}}
+            run: |
+               if ! sed -i 's/version: .*$/version: $FULL_VERSION/g' Chart.yaml; then
+                 echo "Helm Chart version Update Failed"
+                 exit 1
+          - name: Package Chart
+            working-directory: '/helm-charts'
+            if: steps.update_version.outcome == 'success'
+            run: |
+              Helm package
+              
